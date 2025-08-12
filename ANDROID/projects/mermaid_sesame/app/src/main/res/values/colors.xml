@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="background_dark">#0A0A0A</color>
+    <color name="background_medium">#1A1A1A</color>
+    <color name="neon_cyan">#00FFFF</color>
+    <color name="neon_purple">#FF00FF</color>
+    <color name="neon_yellow">#FFFF00</color>
+    <color name="neon_green">#00FF00</color>
+    <color name="text_white">#FFFFFF</color>
+    <color name="text_gray">#666666</color>
+</resources> 

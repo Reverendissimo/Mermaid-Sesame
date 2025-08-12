@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Mermaid Sesame</string>
+    <string name="service_name">Mermaid Sesame HCE Service</string>
+    <string name="card_title">Mermaid Sesame Card</string>
+    <string name="aid_group">Mermaid Sesame AID Group</string>
+</resources> 

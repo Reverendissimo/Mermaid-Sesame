@@ -1,0 +1,57 @@
+# Exclude specified folders
+ANDROID/android-sdk/
+ANDROID/android-studio/
+ANDROID/gradle/
+ANDROID/tools/
+venv/
+
+# Reference repositories (git submodules)
+REFERENCE/Android_HCE_Beginner_App/
+REFERENCE/ElectronicCats-PN7150/
+REFERENCE/linux_libnfc-nci/
+
+# Android build artifacts
+ANDROID/projects/*/app/build/
+ANDROID/projects/*/build/
+ANDROID/projects/*/.gradle/
+ANDROID/projects/*/local.properties
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp 
