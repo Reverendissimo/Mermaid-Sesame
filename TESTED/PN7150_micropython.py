@@ -564,37 +564,41 @@ class Electroniccats_PN7150:
                 pRfIntf.Info.NFC_APP.SelRes[0] = pBuf[4 + pRfIntf.Info.NFC_APP.NfcIdLen]
 
     def SendApduCommand(self, apdu_cmd):
-        """Send APDU command to activated tag"""
-        # NCI RF_TRANSCEIVE_CMD
-        # Header: 0x00 0x00 (RF Interface ID, Message Type)
-        # Length: 2 bytes for payload length
-        # Payload: APDU command
+        """Send APDU command to activated tag using DATA_PACKET format (like official library)"""
+        # DATA_PACKET format: [0x00, 0x00, CommandSize, CommandData]
+        # This is the correct format for ISO-DEP communication
         
         cmd_length = len(apdu_cmd)
-        nci_cmd = bytearray([0x00, 0x00, (cmd_length >> 8) & 0xFF, cmd_length & 0xFF]) + apdu_cmd
+        data_packet = bytearray([0x00, 0x00, cmd_length]) + apdu_cmd
         
-        print(f"  NCI Transceive CMD: {self.print_hex_array(nci_cmd, len(nci_cmd))}")
+        print(f"  DATA_PACKET CMD: {self.print_hex_array(data_packet, len(data_packet))}")
         
-        # Send the command
-        self.writeData(nci_cmd, len(nci_cmd))
+        # Send the DATA_PACKET
+        self.writeData(data_packet, len(data_packet))
         
-        # Get response
+        # Get immediate response (acknowledgment) - EXACT like official library
+        self.getMessage()
+        print(f"  Immediate response: {self.print_hex_array(self.rxBuffer, self.rxMessageLength)}")
+        
+        # Wait for actual data response - EXACT like official library
         if self.getMessage(1000):  # 1 second timeout
-            # Check if it's a response
-            if self.rxBuffer[0] == 0x40 and self.rxBuffer[1] == 0x00:  # RF_TRANSCEIVE_RSP
+            print(f"  Data response: {self.print_hex_array(self.rxBuffer, self.rxMessageLength)}")
+            
+            # Check if it's a DATA_PACKET response
+            if self.rxBuffer[0] == 0x00 and self.rxBuffer[1] == 0x00:
                 payload_length = self.rxBuffer[2]
                 if payload_length > 0:
                     response = self.rxBuffer[3:3+payload_length]
-                    print(f"  NCI Transceive RSP: {self.print_hex_array(response, len(response))}")
+                    print(f"  DATA_PACKET RSP: {self.print_hex_array(response, len(response))}")
                     return response
                 else:
                     print("  Empty response")
                     return None
             else:
-                print(f"  Unexpected response: {self.print_hex_array(self.rxBuffer, self.rxMessageLength)}")
+                print(f"  Unexpected response format: {self.print_hex_array(self.rxBuffer, self.rxMessageLength)}")
                 return None
         else:
-            print("  No response received")
+            print("  No data response received")
             return None
 
     def print_hex_array(self, data, length):
@@ -612,61 +616,4 @@ class Electroniccats_PN7150:
         self.getMessage(1000)
         return True
 
-def test_arduino_final():
-    print("=== Testing Final Working Arduino Library Translation ===")
-    print("IRQ=15, VEN=14 (matching Arduino example)")
-    print()
-    
-    # Initialize I2C
-    i2c = I2C(0, scl=Pin(22), sda=Pin(21), freq=100000)
-    
-    # Create PN7150 instance with Arduino example pins
-    # Arduino example: PN7150_IRQ=15, PN7150_VEN=14, PN7150_ADDR=0x28
-    nfc = Electroniccats_PN7150(IRQpin=15, VENpin=14, I2Caddress=0x28, wire=i2c)
-    
-    print("Initializing...")
-    if nfc.connectNCI():  # Wake up the board
-        print("Error while setting up the mode, check connections!")
-        return False
-    
-    print("Configuring settings...")
-    if nfc.ConfigureSettings():  # Returns True on error, False on success
-        print("The Configure Settings is failed!")
-        return False
-    
-    print("Configuring mode...")
-    if nfc.ConfigMode(1):  # Set up the configuration mode (mode=1 for RW)
-        print("The Configure Mode is failed!!")
-        return False
-    
-    print("Starting discovery...")
-    nfc.StartDiscovery(1)  # NCI Discovery mode
-    print("Waiting for an Mifare Classic Card ...")
-    
-    # Create RfIntf_t structure
-    RfInterface = RfIntf_t()
-    
-    # Wait for card detection - EXACT like Arduino example
-    if not nfc.WaitForDiscoveryNotification(RfInterface):
-        if RfInterface.Protocol == PROT_MIFARE:
-            print(" - Found MIFARE card")
-            if RfInterface.ModeTech == (MODE_POLL | TECH_PASSIVE_NFCA):
-                print(f"\tSENS_RES = 0x{RfInterface.Info.NFC_APP.SensRes[0]:02X} 0x{RfInterface.Info.NFC_APP.SensRes[1]:02X}")
-                print(f"\tNFCID = ", end="")
-                for i in range(RfInterface.Info.NFC_APP.NfcIdLen):
-                    print(f"0x{RfInterface.Info.NFC_APP.NfcId[i]:02X} ", end="")
-                print()
-                
-                if RfInterface.Info.NFC_APP.SelResLen != 0:
-                    print(f"\tSEL_RES = 0x{RfInterface.Info.NFC_APP.SelRes[0]:02X}")
-                
-                print("✓ MIFARE card detected and read successfully!")
-                return True
-        else:
-            print(" - Found a card, but it is not Mifare")
-    
-    print("✗ No card detected")
-    return False
-
-if __name__ == "__main__":
-    test_arduino_final() 
+ 

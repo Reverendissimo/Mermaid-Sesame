@@ -1,7 +1,7 @@
-# PN7150 Library Reference - Detailed Function Documentation
+# PN7150 MicroPython Library Reference - Complete Function Documentation
 
 ## Overview
-This document provides detailed reference for each function in the working PN7150 library, including operation sequences, timing, and critical implementation details.
+This document provides comprehensive reference for the professional PN7150 MicroPython library, including all functions, HCE (Host Card Emulation) support, APDU communication, and critical implementation details.
 
 ## Library Initialization
 
@@ -21,7 +21,7 @@ This document provides detailed reference for each function in the working PN715
 **Initialization Sequence:**
 1. Create Pin objects for IRQ (INPUT) and VEN (OUTPUT)
 2. Initialize message handling variables (rxBuffer, rxMessageLength, etc.)
-3. Initialize controller info variables
+3. Initialize controller info variables (gNfcController_generation, gNfcController_fw_version)
 
 ---
 
@@ -255,6 +255,7 @@ return self.irq.value() == 1  # ACTIVE HIGH - PN7150 drives IRQ HIGH
 **Supported Card Types:**
 - **MIFARE Classic:** Protocol 0x80, 4-byte UID
 - **NTAG:** Protocol 0x02 (ISO-DEP), 7-byte UID
+- **Android HCE:** Protocol 0x04 (ISO-DEP), dynamic UID
 - **Other NFC-A:** Any card using TECH_PASSIVE_NFCA
 
 **Card Selection Process (if needed):**
@@ -265,6 +266,88 @@ return self.irq.value() == 1  # ACTIVE HIGH - PN7150 drives IRQ HIGH
 **Timing:** 
 - Immediate if card present
 - Up to timeout if waiting for card
+
+---
+
+## HCE and APDU Communication Functions
+
+### `SendApduCommand(apdu_cmd)`
+**Purpose:** Send APDU command to activated tag using DATA_PACKET format
+**Parameters:**
+- `apdu_cmd`: APDU command bytearray (e.g., SELECT AID command)
+
+**Returns:** Response bytearray or None if failed
+
+**Operation Sequence:**
+1. **Format DATA_PACKET:** `[0x00, 0x00, CommandSize, CommandData]`
+2. **Send DATA_PACKET** via `writeData()`
+3. **Get immediate response** via `getMessage()` (acknowledgment)
+4. **Get data response** via `getMessage(1000)` (actual APDU response)
+5. **Parse response** and extract payload
+
+**Critical Implementation Details:**
+- Uses **DATA_PACKET format** for ISO-DEP communication
+- **Dual getMessage() calls** - exact like official ElectronicCats library
+- **Immediate response** (acknowledgment) followed by **data response**
+- **Response format:** `[0x00, 0x00, PayloadLength, PayloadData]`
+
+**Example SELECT AID Command:**
+```python
+# SELECT AID: CLA=00, INS=A4, P1=04, P2=00, Lc=07, AID=F1726576406873
+select_cmd = bytearray([0x00, 0xA4, 0x04, 0x00, 0x07, 0xF1, 0x72, 0x65, 0x76, 0x40, 0x68, 0x73])
+response = nfc.SendApduCommand(select_cmd)
+```
+
+**Expected Response Format:**
+- **Success:** `[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x90, 0x00]`
+- **Status:** Last 2 bytes are status words (0x90 0x00 = success)
+- **Data:** All bytes except last 2 are response data
+
+**Timing:** ~50-100ms total (including both message reads)
+
+### `FillInterfaceInfo(pRfIntf, pBuf)`
+**Purpose:** Fill RfIntf_t structure with detailed card information
+**Parameters:**
+- `pRfIntf`: RfIntf_t structure to fill
+- `pBuf`: Raw card information buffer
+
+**Operation Sequence:**
+1. Check card protocol (T1T, T2T, etc.)
+2. Extract SENS_RES, NFCID, SEL_RES based on protocol
+3. Store information in appropriate structure fields
+
+**Supported Protocols:**
+- **T1T (Topaz):** SENS_RES, NFCID
+- **T2T (MIFARE):** SENS_RES, NFCID, SEL_RES
+
+---
+
+## Utility Functions
+
+### `print_hex_array(data, length)`
+**Purpose:** Convert byte array to formatted hex string
+**Parameters:**
+- `data`: Byte array to format
+- `length`: Number of bytes to format
+
+**Returns:** Formatted hex string (e.g., "0x01 0x02 0x03")
+
+**Example:**
+```python
+result = nfc.print_hex_array([0x01, 0x02, 0x03], 3)
+# Returns: "0x01 0x02 0x03"
+```
+
+### `StopDiscovery()`
+**Purpose:** Stop current discovery process
+**Returns:** True
+
+**Operation Sequence:**
+1. Send RF_DEACTIVATE_CMD: `[0x21, 0x06, 0x01, 0x00]`
+2. Read immediate response via `getMessage()`
+3. Read completion response via `getMessage(1000)`
+
+**Timing:** ~10-20ms
 
 ---
 
@@ -286,31 +369,14 @@ return self.irq.value() == 1  # ACTIVE HIGH - PN7150 drives IRQ HIGH
 **Card Type Patterns:**
 - **MIFARE Pattern:** `[0x04, 0x00, 0x04]` at positions 11-13, UID at position 14 (4 bytes)
 - **NTAG Pattern:** `[0x07, 0x04]` at positions 12-13, UID at position 13 (7 bytes)
+- **Android HCE:** Dynamic UID generation, varies per read
 
 **Example Responses:**
 - **MIFARE:** `[0x61, 0x05, 0x14, ..., 0x04, 0x00, 0x04, 0x93, 0x5C, 0xE2, 0x26, ...]`
 - **NTAG:** `[0x61, 0x05, 0x17, ..., 0x07, 0x04, 0x04, 0x89, 0xB7, 0xAA, 0x28, 0x63, 0x80, ...]`
+- **Android HCE:** `[0x61, 0x05, 0x19, ..., 0x08, 0x9A, 0xF7, 0xCB, ...]`
 
 **Timing:** Immediate
-
-## Reset Functions
-
-### `stop_discovery(nfc)` (Helper function)
-**Purpose:** Stop current discovery process
-**Operation Sequence:**
-1. Send RF_DEACTIVATE_CMD: `[0x21, 0x06, 0x01, 0x00]`
-2. Read response messages
-3. Wait for completion
-
-**Timing:** ~10-20ms
-
-### `reset_mode(nfc, mode)` (Helper function)
-**Purpose:** Reset mode configuration
-**Operation Sequence:**
-1. Call `ConfigMode(mode)`
-2. Call `StartDiscovery(mode)`
-
-**Timing:** ~20-40ms
 
 ---
 
@@ -321,8 +387,8 @@ return self.irq.value() == 1  # ACTIVE HIGH - PN7150 drives IRQ HIGH
 **Structure:**
 ```python
 class RfIntf_t:
-    Interface: int      # Interface type (0x80 for TAGCMD)
-    Protocol: int       # Protocol (0x80 for MIFARE)
+    Interface: int      # Interface type (0x80 for TAGCMD, 0x02 for ISODEP)
+    Protocol: int       # Protocol (0x80 for MIFARE, 0x04 for HCE)
     ModeTech: int       # Mode and technology (0x00 for NFC-A)
     MoreTags: bool      # Multiple cards present
     Info: RfIntf_Info_t # Detailed card information
@@ -350,6 +416,7 @@ class RfIntf_Info_t:
 | Configuration | 500-1000ms | RF config is slowest |
 | Discovery start | 10-20ms | Quick operation |
 | Card detection | Immediate-5s | Depends on card presence |
+| APDU communication | 50-100ms | Dual getMessage() calls |
 | Card reset | 20-40ms | Stop + restart discovery |
 
 ## Error Handling
@@ -358,31 +425,71 @@ class RfIntf_Info_t:
 - `[0x40, 0x02, 0x02, 0x05, 0x00]` - Configuration rejected
 - `[0x60, 0x07, ...]` - CORE_GENERIC_ERROR_NTF
 - `[0x41, 0x03, 0x01, 0x06, 0x00]` - Discovery failed
+- `[0x60, 0x06, 0x03, 0x01, 0x00, 0x01]` - Interface not activated
+- `[0x60, 0x08, 0x02, 0x05, 0x00]` - AID not found
+
+**APDU Status Words:**
+- `0x90 0x00` - Success
+- `0x6A 0x82` - File not found
+- `0x6A 0x86` - Incorrect P1P2
+- `0x6A 0x87` - Lc inconsistent with P1P2
 
 **Timeout Values:**
 - NCI operations: 15-1000ms
 - Card detection: 0-5000ms (0 = infinite)
+- APDU operations: 1000ms
 - I2C operations: 1-5ms
 
-## Usage Pattern
+## Usage Patterns
 
-**Typical Usage Sequence:**
-1. Initialize: `nfc = Electroniccats_PN7150(15, 14, 0x28)`
-2. Connect: `nfc.connectNCI()`
-3. Configure: `nfc.ConfigureSettings()`
-4. Set mode: `nfc.ConfigMode(1)`
-5. Start discovery: `nfc.StartDiscovery(1)`
-6. Wait for cards: `nfc.WaitForDiscoveryNotification(RfInterface)`
-7. Extract UID: `extract_correct_uid(nfc.rxBuffer, nfc.rxMessageLength)`
-8. Process card data based on protocol (0x80=MIFARE, 0x02=NTAG)
-9. Reset for next card: `stop_discovery()` → `StartDiscovery()` → `reset_mode()`
+### Basic Card Reading:
+```python
+# Initialize
+nfc = Electroniccats_PN7150(IRQpin=15, VENpin=14, I2Caddress=0x28, wire=i2c)
 
-**Multi-Card Support:**
-- **MIFARE Classic:** 4-byte UID, Protocol 0x80
-- **NTAG:** 7-byte UID, Protocol 0x02 (ISO-DEP)
-- **Universal:** Works with any NFC-A card type
+# Connect and configure
+if nfc.connectNCI():
+    print("ERROR: Failed to connect to NCI")
+    return
 
-**Continuous Reading Pattern:**
+if nfc.ConfigureSettings():
+    print("ERROR: Failed to configure settings")
+    return
+
+mode = 1  # Reader/Writer mode
+if nfc.ConfigMode(mode):
+    print("ERROR: Failed to configure mode")
+    return
+
+# Start discovery
+nfc.StartDiscovery(mode)
+
+# Wait for card
+RfInterface = RfIntf_t()
+if nfc.WaitForDiscoveryNotification(RfInterface):
+    uid = extract_correct_uid(nfc.rxBuffer, nfc.rxMessageLength)
+    if uid:
+        uid_str = ":".join([f"{b:02X}" for b in uid])
+        print(f"CARD UID: {uid_str}")
+```
+
+### HCE Communication:
+```python
+# After card detection, send APDU commands
+if RfInterface.Protocol == 0x04:  # Android HCE
+    # SELECT AID command
+    select_cmd = bytearray([0x00, 0xA4, 0x04, 0x00, 0x07, 0xF1, 0x72, 0x65, 0x76, 0x40, 0x68, 0x73])
+    response = nfc.SendApduCommand(select_cmd)
+    
+    if response:
+        # Check status words (last 2 bytes)
+        status = response[-2:]
+        if status == bytearray([0x90, 0x00]):
+            data = response[:-2]  # Remove status words
+            print(f"HCE Response: {nfc.print_hex_array(data, len(data))}")
+```
+
+### Continuous Reading Pattern:
 ```python
 while True:
     if nfc.WaitForDiscoveryNotification(RfInterface):
@@ -390,11 +497,43 @@ while True:
         if uid:
             uid_str = ":".join([f"{b:02X}" for b in uid])
             print(f"CARD UID: {uid_str}")
+            
+            # Handle different card types
+            if RfInterface.Protocol == 0x04:  # Android HCE
+                # Send APDU commands for HCE communication
+                pass
+            elif RfInterface.Protocol == 0x80:  # MIFARE
+                # Handle MIFARE cards
+                pass
         
         # Reset for next card
-        stop_discovery(nfc)
+        nfc.StopDiscovery()
         nfc.StartDiscovery(mode)
-        reset_mode(nfc, mode)
 ```
 
-This reference should provide complete documentation for working with the PN7150 library. 
+## Supported Card Types
+
+| Card Type | Protocol | UID Length | Interface | Notes |
+|-----------|----------|------------|-----------|-------|
+| MIFARE Classic | 0x80 | 4 bytes | TAGCMD | Standard MIFARE cards |
+| NTAG | 0x02 | 7 bytes | ISODEP | NTAG213/215/216 |
+| Android HCE | 0x04 | Dynamic | ISODEP | Host Card Emulation |
+| Other NFC-A | 0x02 | Variable | ISODEP | Any NFC-A card |
+
+## HCE Communication Details
+
+### APDU Command Format:
+- **SELECT AID:** `[0x00, 0xA4, 0x04, 0x00, Lc, AID...]`
+- **READ BINARY:** `[0x00, 0xB0, 0x00, 0x00, Le]`
+- **UPDATE BINARY:** `[0x00, 0xD6, 0x00, 0x00, Lc, Data...]`
+
+### Response Format:
+- **Success:** `[Data..., 0x90, 0x00]`
+- **Error:** `[0x6A, 0x82]` (File not found)
+
+### Common AIDs:
+- **Mermaid Sesame:** `F1726576406873`
+- **Google Pay:** `325041592E5359532E4444463031`
+- **Android Digital Car Key:** `A000000809434343444B467631`
+
+This reference provides complete documentation for working with the professional PN7150 MicroPython library, including all HCE and APDU communication features. 
